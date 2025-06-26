@@ -1,4 +1,5 @@
 from io import BytesIO
+from uuid import UUID
 
 def _is_ascii(s):
     return all(ord(c) < 128 for c in s)
@@ -9,12 +10,19 @@ class Reader:
             self.file = open(file, 'rb')
         elif isinstance(file, bytes):
             self.file = BytesIO(file)
+            
+    def get_size(self):
+        current_pos = self.file.tell()
+        self.file.seek(0, 2)
+        size = self.file.tell()
+        self.file.seek(current_pos)
+        return size
         
     def get_pos(self):
         return self.file.tell()
     
     def set_pos(self, position: int, end=False):
-        self.file.seek(-position if end else position)
+        self.file.seek(-position if end else position, 2 if end else 0)
     
     def read(self, size: int):
         return self.file.read(size)
@@ -37,8 +45,13 @@ class Reader:
     def int64(self):
         return int.from_bytes(self.file.read(8), byteorder='little', signed=True)
     
-    def string(self):
-        length = self.int32()
+    def uuid4(self):
+        return self.file.read(20)  # Read 16 bytes for UUID
+        #return UUID(bytes=self.file.read(16), version=4)
+    
+    def string(self, length=None):
+        if length is None:
+            length = self.int32()
         string = ""
         
         if length > 0:
