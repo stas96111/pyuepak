@@ -52,6 +52,11 @@ new_pak.write(r"path/to/pak.pak")
 
 Contributions are welcome! Please open issues or submit pull requests.
 
+## Credits
+This project is based on information and ideas from two great open-source tools: 
+ - [repak](https://github.com/trumank/repak)
+ - [rust-u4pak](https://github.com/panzi/rust-u4pak).
+
 ## License
 
 This project is licensed under the MIT License.
