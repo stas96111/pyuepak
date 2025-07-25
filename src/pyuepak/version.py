@@ -1,6 +1,5 @@
 from enum import IntEnum
-
-class LocresVersion(IntEnum):
+class PakVersion(IntEnum):
     V1 = 1
     V2 = 2
     V3 = 3

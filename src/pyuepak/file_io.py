@@ -4,25 +4,39 @@ from uuid import UUID
 def _is_ascii(s):
     return all(ord(c) < 128 for c in s)
 
-class Reader:
-    def __init__(self, file):
-        if isinstance(file, str):
-            self.file = open(file, 'rb')
-        elif isinstance(file, bytes):
-            self.file = BytesIO(file)
-            
+
+class IOBase:
+    def __init__(self, file: str | BytesIO):
+        self.file = file
+    
+    def get_pos(self):
+        return self.file.tell()
+    
+    def set_pos(self, position: int, end=False):
+        self.file.seek(-position if end else position, 2 if end else 0)
+        
     def get_size(self):
         current_pos = self.file.tell()
         self.file.seek(0, 2)
         size = self.file.tell()
         self.file.seek(current_pos)
         return size
-        
-    def get_pos(self):
-        return self.file.tell()
     
-    def set_pos(self, position: int, end=False):
-        self.file.seek(-position if end else position, 2 if end else 0)
+    def close(self):
+        self.file.close()
+
+class Reader(IOBase):
+    def __init__(self, file=None):
+        self.path = file
+        if isinstance(file, str):
+            self.file = open(file, 'rb')
+        elif isinstance(file, bytes):
+            self.file = BytesIO(file)
+        else:
+            self.file = BytesIO()
+            
+    def reopen(self):
+        self.__init__(self.path)
     
     def read(self, size: int):
         return self.file.read(size)
@@ -45,9 +59,8 @@ class Reader:
     def int64(self):
         return int.from_bytes(self.file.read(8), byteorder='little', signed=True)
     
-    def uuid4(self):
-        return self.file.read(20)  # Read 16 bytes for UUID
-        #return UUID(bytes=self.file.read(16), version=4)
+    def sha1(self):
+        return self.file.read(20)  
     
     def string(self, length=None):
         if length is None:
@@ -71,20 +84,23 @@ class Reader:
             length = self.uint32()
         out_list = [func() for i in range(length)]
         return out_list
-    
-    def close(self):
-        self.file.close()
         
+    def buffer(self, offset: int = None, size: int = None):
+        if offset is None:
+            offset = self.get_pos()
         
-class Writer:
-    def __init__(self, path):
-        self.file = open(path, "wb")
+        current_pos = self.get_pos()
+        self.set_pos(offset)
+        buffer = Reader(self.read(size) if size else self.read())
+        self.set_pos(current_pos)
+        return buffer
         
-    def get_pos(self):
-        return self.file.tell()
-        
-    def set_pos(self, position: int, end=False):
-        self.file.seek(-position if end else position)
+class Writer(IOBase):
+    def __init__(self, path = None):
+        if path:
+            self.file = open(path, "wb")
+        else:
+            self.file = BytesIO()
         
     def write(self, data):
         self.file.write(data)
@@ -98,6 +114,9 @@ class Writer:
     def uint64(self, value: int):
         self.file.write(value.to_bytes(8, 'little'))
         
+    def uint128(self, value: int):
+        self.file.write(value.to_bytes(16, 'little'))
+        
     def int(self, value: int):
         self.file.write(value.to_bytes(1, 'little', signed=True))
 
@@ -107,6 +126,13 @@ class Writer:
     def int64(self, value: int):
         self.file.write(value.to_bytes(8, 'little', signed=True))
         
+    def int128(self, value: int):
+        self.file.write(value.to_bytes(16, 'little', signed=True))
+        
+        
+    def sha1(self, value: bytes):
+        self.file.write(value)  # Write 20 bytes for SHA1
+
     def string(self, value: str, use_unicode=False):
         value += '\x00'
         if (not use_unicode) and _is_ascii(value):
@@ -129,6 +155,3 @@ class Writer:
             self.uint32(len(list_items))
         for item in list_items:
             self.string(item)
-        
-    def close(self):
-        self.file.close()
