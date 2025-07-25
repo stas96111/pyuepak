@@ -4,7 +4,7 @@ from .footer import Footer
 from .index import Index
 from .entry import Entry
 
-import shutil
+import shutil, os
 class PakFile:
     def __init__(self):
         """Initialize a new PakFile instance."""
@@ -116,3 +116,25 @@ class PakFile:
         entry = self._index.entrys.get(path)
         return entry.read_file(self.reader, self._footer.version, self.key) 
     
+    
+    def list_files(self) -> list[str]:
+        """List all files in the pak file."""
+        return list(self._index.entrys.keys())
+    
+    
+    def unpack(self, output_dir: str):
+        """Unpack the pak file to the specified directory."""
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        entries_list = self.list_files()
+
+        for path in entries_list:
+            entry = self._index.entrys.get(path)
+            file_path = os.path.join(output_dir, path)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+            data = entry.read_file(self.reader, self._footer.version, self.key)
+            with open(file_path, 'wb') as f:
+                f.write(data)
