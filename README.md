@@ -16,8 +16,8 @@ pip install pyuepak
 Or install directly from the repository:
 
 ```bash
-git clone https://github.com/stas96111/pylocres.git
-cd pylocres
+git clone https://github.com/stas96111/pyuepak.git
+cd pyuepak
 pip install -r requirements.txt
 pip install .
 ```
