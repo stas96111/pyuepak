@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyuepak"
+version = "0.1.0"
+authors = [
+  { name = "stas96111", email = "stas96111@gmail.com" },
+]
+description = "pyuepak is a Python library for working with Unreal Engine .pak files."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = {file = "LICENSE"}
+
+[tool.setuptools]
+license-files = []
+
+[project.urls]
+Homepage = "https://github.com/stas96111/pyuepak"
