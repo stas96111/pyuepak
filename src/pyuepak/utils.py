@@ -1,17 +1,15 @@
 
 
 
-def hybrid_method(func):
-    def wrapper(instance_or_cls, *args, **kwargs):
-        if isinstance(instance_or_cls, type):
-            # Called on class: create a temporary instance
-            temp_instance = instance_or_cls()
-            return func(temp_instance, *args, **kwargs)
-        else:
-            # Called on instance
-            return func(instance_or_cls, *args, **kwargs)
+class hybrid_method:
+    def __init__(self, func):
+        self.func = func
 
-    return classmethod(wrapper)
+    def __get__(self, obj, cls=None):
+        def wrapper(*args, **kwargs):
+            instance = obj if obj is not None else cls()
+            return self.func(instance, *args, **kwargs)
+        return wrapper
 
         
         

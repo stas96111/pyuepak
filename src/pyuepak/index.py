@@ -102,6 +102,7 @@ class Index:
                 self.entrys[path] = entry
         
         
+        
     def write(self, writer: Writer, version: PakVersion, mount_point: str = "../../../", 
               path_hash_seed: int = 0):
         self.offset = writer.get_pos()
@@ -164,6 +165,7 @@ class Index:
             
         if fdi_buf:
             writer.write(fdi_buf.file.getvalue())
+
 
 
 def generate_phi(writer: Writer, entries: list[tuple[str, int]], path_hash_seed=0):
