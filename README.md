@@ -36,7 +36,7 @@ print(pak.key) # b'0000000...' AES key (default)
 print(pak.path_hash_seed) # 0 (default)
 print(pak.count) # prints file count
 
-data = pak.read_file(r"/Game/asset.uasset") # return bynary data
+data = pak.read_file(r"/Game/asset.uasset") # return binary data
 pak.remove_file(r"/Game/asset.uasset")
 
 new_pak = PakFile()
