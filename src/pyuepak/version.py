@@ -1,4 +1,6 @@
 from enum import IntEnum
+
+
 class PakVersion(IntEnum):
     V1 = 1
     V2 = 2

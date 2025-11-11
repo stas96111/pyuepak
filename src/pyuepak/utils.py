@@ -1,6 +1,3 @@
-
-
-
 class hybrid_method:
     def __init__(self, func):
         self.func = func
@@ -9,13 +6,13 @@ class hybrid_method:
         def wrapper(*args, **kwargs):
             instance = obj if obj is not None else cls()
             return self.func(instance, *args, **kwargs)
+
         return wrapper
 
-        
-        
+
 def fnv64(data_bytes: bytes, offset: int) -> int:
-    OFFSET = 0xcbf29ce484222325
-    PRIME = 0x00000100000001b3
+    OFFSET = 0xCBF29CE484222325
+    PRIME = 0x00000100000001B3
     hash_ = (OFFSET + offset) & 0xFFFFFFFFFFFFFFFF
 
     for b in data_bytes:
@@ -40,6 +37,6 @@ def split_path_child(path: str) -> tuple[str, str] | None:
 
     idx = path.rfind("/")
     if idx != -1:
-        return (path[:idx + 1], path[idx + 1:])
+        return (path[: idx + 1], path[idx + 1 :])
     else:
         return ("/", path)
