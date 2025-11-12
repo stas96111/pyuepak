@@ -84,7 +84,7 @@ class Reader(IOBase):
     def list(self, func, length=None):
         if not length:
             length = self.uint32()
-        out_list = [func() for i in range(length)]
+        out_list = [func(self) for i in range(length)]
         return out_list
 
     def buffer(self, offset: int = None, size: int = None):

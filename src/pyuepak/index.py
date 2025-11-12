@@ -113,6 +113,8 @@ class Index:
                 entry.read(index_reader, version)
                 self.entrys[path] = entry
 
+        logger.debug(f"Read {len(self.entrys)} entries from index.")
+
     def write(
         self,
         writer: Writer,

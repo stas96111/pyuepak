@@ -9,10 +9,17 @@ from .utils import hybrid_method
 from .version import PakVersion
 
 import logging
+import zlib
+from enum import IntEnum
 
 logger = logging.getLogger("pyuepak.entry")
 
 UINT32_MAX = 0xFFFFFFFF
+
+
+class COMPRESSION(IntEnum):
+    NONE = 0
+    ZLIB = 1
 
 
 def align(offset: int) -> int:
@@ -22,7 +29,7 @@ def align(offset: int) -> int:
 class Block:
     """Represents a block in the entry."""
 
-    def __init__(self, start, end):
+    def __init__(self, start=None, end=None):
         self.start = start
         self.end = end
 
@@ -51,7 +58,7 @@ class Entry:
 
     @staticmethod
     def get_serialized_size(
-        version: PakVersion, size: int, compression_block_count: int
+        version: PakVersion, compresion: COMPRESSION, compression_block_count: int
     ) -> int:
         out = 24
         if version == PakVersion.V8A:
@@ -64,10 +71,10 @@ class Entry:
 
         out += 20
 
-        if size:
+        if compresion != COMPRESSION.NONE:
             out += 4 + 16 * compression_block_count
 
-        size += 1
+        out += 1
 
         if version >= PakVersion.V3:
             out += 4
@@ -81,13 +88,16 @@ class Entry:
         self.compressed_size = reader.uint64()
         self.size = reader.uint64()
 
+        compression_name = None
         if version == PakVersion.V8A:
-            self.compressio_name = reader.uint()
+            compression_name = reader.uint()
         else:
-            self.compressio_name = reader.uint32()
-        self.compressio_name = (
-            None if self.compressio_name == 0 else self.compressio_name - 1
-        )
+            compression_name = reader.uint32()
+
+        if compression_name == 0:
+            self.compression = COMPRESSION.NONE
+        else:
+            self.compression = COMPRESSION(compression_name)
 
         if version == PakVersion.V1:
             self.timestamp = reader.uint64()
@@ -95,14 +105,14 @@ class Entry:
         self.hash = reader.sha1()
 
         if version >= PakVersion.V3:
-            if self.compressio_name is not None:
+            if self.compression != COMPRESSION.NONE:
                 self.blocks = reader.list(Block().read)
-            self.is_encrypted = reader.uint()
-            self.compressio_block_size = reader.uint32()
+            self.is_encrypted = bool(reader.uint())
+            self.compression_block_size = reader.uint32()
 
         logger.debug(
             f"Read Entry: offset={self.offset}, size={self.size}, compressed_size={self.compressed_size},"
-            f" is_encrypted={self.is_encrypted}, compression_name={self.compressio_name}"
+            f" is_encrypted={self.is_encrypted}, compression_name={self.compression}"
         )
 
         return self
@@ -112,19 +122,23 @@ class Entry:
         """Read the entry from the encoded reader."""
 
         data = reader.uint32()
-        self.compressio_name = (data >> 23) & 0x3F
-        self.compressio_name = (
-            None if self.compressio_name == 0 else self.compressio_name - 1
-        )
+
+        compressio_name = (data >> 23) & 0x3F
+        if compressio_name == 0:
+            self.compression = COMPRESSION.NONE
+        else:
+            self.compression = COMPRESSION(compressio_name)
 
         self.is_encrypted = bool(data & (1 << 22))
-        compression_block_count = (data >> 6) & 0xFFFF
+        self.compression_block_count = (data >> 6) & 0xFFFF
         compression_block_size = data & 0x3F
 
         if compression_block_size == 0x3F:
             compression_block_size = reader.uint32()
         else:
             compression_block_size <<= 11
+
+        self.compression_block_size = compression_block_size
 
         def read_varint(bit):
             if data & (1 << bit) != 0:
@@ -135,21 +149,21 @@ class Entry:
         self.offset = read_varint(31)
         self.size = read_varint(30)
 
-        if self.compressio_name is not None:
-            self.compressed_size = read_varint(29)
-        else:
+        if self.compression == COMPRESSION.NONE:
             self.compressed_size = self.size
+        else:
+            self.compressed_size = read_varint(29)
 
         offset_base = Entry.get_serialized_size(
-            version, self.size, compression_block_count
+            version, self.compression, self.compression_block_count
         )
 
-        if compression_block_count == 1 and not self.is_encrypted:
-            self.blocks = [Block(offset_base, offset_base + self.size)]
-        elif compression_block_count > 0:
+        if self.compression_block_count == 1 and not self.is_encrypted:
+            self.blocks = [Block(offset_base, offset_base + self.compressed_size)]
+        elif self.compression_block_count > 0:
             index = offset_base
             self.blocks = []
-            for _ in range(compression_block_count):
+            for _ in range(self.compression_block_count):
                 block_size = reader.uint32()
                 block = Block(index, index + block_size)
                 if self.is_encrypted:
@@ -158,6 +172,18 @@ class Entry:
                 index += block_size
                 self.blocks.append(block)
 
+        logger.debug(
+            f"Read Encoded Entry:\n"
+            f" offset={self.offset}\n"
+            f" size={self.size}\n"
+            f" compressed_size={self.compressed_size}\n"
+            f" is_encrypted={self.is_encrypted}\n"
+            f" compression={self.compression}\n"
+            f" compression_block_count={self.compression_block_count}\n"
+            f" compression_block_size={self.compression_block_size}\n"
+            f" blocks={[(str(b.start) + '-' + str(b.end)) for b in self.blocks]}"
+        )
+
         return self
 
     @hybrid_method
@@ -165,13 +191,14 @@ class Entry:
         """Read the entry from the file."""
         reader.set_pos(self.offset)
 
-        test = Entry.read(reader, version)
-
+        # Read and discard the entry header from the file - we already have the metadata from the index
+        _discard_entry = Entry.read(reader, version)
+        data_offset = reader.get_pos()
         data = None
         if self.is_encrypted:
             data = reader.read(align(self.compressed_size))
         else:
-            data = reader.read(self.size)
+            data = reader.read(self.compressed_size)
 
         if self.is_encrypted:
             cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
@@ -189,7 +216,31 @@ class Entry:
             # Truncate to original compressed size
             data = decrypted_data[: self.compressed_size]
 
-        return bytes(data)
+        ranges = []
+        if self.blocks:
+
+            def offset(index: int) -> int:
+                if version >= PakVersion.V5:
+                    return index - (data_offset - self.offset)
+                else:
+                    return index - data_offset
+
+            ranges = [range(offset(b.start), offset(b.end)) for b in self.blocks]
+        else:
+            ranges = [range(0, len(data))]
+
+        decompressed_data = Writer()
+
+        if self.compression == COMPRESSION.ZLIB:
+            for r in ranges:
+                decompressed_data.write(zlib.decompress(data[r.start : r.stop]))
+            return decompressed_data.file.getvalue()
+        elif self.compression == COMPRESSION.NONE:
+            return bytes(data)
+        else:
+            raise NotImplementedError(
+                f"Compression type {self.compression} not implemented."
+            )
 
     def write_data(self, writer: Writer, version: PakVersion):
         self.offset = writer.get_pos()

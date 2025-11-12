@@ -81,14 +81,30 @@ class Footer:
         self.index_size = reader.uint64()
 
         self.hash = reader.sha1()
-        self.is_frozen = reader.uint()
-        self.compresion = reader.string(5)
+
+        if self.version == PakVersion.V9:
+            self.is_frozen = reader.uint()
+
+        char_count = 0
+        if self.version == PakVersion.V8A:
+            char_count = 4
+        elif self.version > PakVersion.V8A:
+            char_count = 5
+
+        compresion_data = reader.read(32 * char_count).split(b"\x00")[0].decode()
+
+        if compresion_data:
+            self.compresion = compresion_data
+        else:
+            self.compresion = None
 
         logger.debug(
             "Footer:"
             f"\n  Version: {self.version.name}"
             f"\n  Index Offset: {self.index_offset}"
             f"\n  Index Size: {self.index_size}"
+            f"\n  Hash: {self.hash.hex()}"
+            f"\n  Is Frozen: {self.is_frozen}"
             f"\n  Is Encrypted: {self.is_encrypted}"
             f"\n  Compression: {self.compresion}"
         )

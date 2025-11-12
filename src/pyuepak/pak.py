@@ -122,6 +122,9 @@ class PakFile:
         """Read a file from the pak file."""
 
         entry = self._index.entrys.get(path)
+        if not entry:
+            logger.debug(f"Entry for path '{path}' not found.")
+            raise KeyError(f"Path '{path}' not found in pak file.")
         return entry.read_file(self.reader, self._footer.version, self.key)
 
     def list_files(self) -> list[str]:
