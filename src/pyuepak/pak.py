@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import base64
 
 from .entry import Entry
 from .file_io import Reader, Writer
@@ -35,11 +36,26 @@ class PakFile:
         return len(self._index.entrys)
 
     def set_key(self, key: bytes | str):
-        """Set the encryption key for the pak file."""
-        byte_key = bytes.fromhex(key) if isinstance(key, str) else key
+        if isinstance(key, str):
+            key_str = key.strip()
+            try:
+                # Try hex first
+                byte_key = bytes.fromhex(key_str)
+            except ValueError:
+                try:
+                    # Try base64
+                    byte_key = base64.b64decode(key_str)
+                except Exception:
+                    raise ValueError(
+                        "Invalid key format: must be hex, base64, or bytes"
+                    )
+        elif isinstance(key, bytes):
+            byte_key = key
+        else:
+            raise TypeError("Key must be str or bytes")
 
         if len(byte_key) != 32:
-            raise ValueError("Key must be 32 bytes long.")
+            raise ValueError(f"Invalid key length: {len(byte_key)} bytes (expected 32)")
 
         self.key = byte_key
 

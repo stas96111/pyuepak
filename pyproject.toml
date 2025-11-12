@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyuepak"
-version = "0.1.4"
+version = "0.2.0"
 authors = [
   { name = "stas96111", email = "stas96111@gmail.com" },
 ]
@@ -22,3 +22,6 @@ license-files = []
 
 [project.urls]
 Homepage = "https://github.com/stas96111/pyuepak"
+
+[project.scripts]
+pyuepak = "pyuepak.cli:cli"

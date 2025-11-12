@@ -23,6 +23,45 @@ pip install -r requirements.txt
 pip install .
 ```
 
+## CLT
+
+```bash
+pyuepak [OPTIONS] COMMAND [ARGS]...
+```
+
+Global option:
+`--aes <key>` — AES key for encrypted `.pak` files.
+
+---
+
+## Commands
+
+| Command   | Description                     |
+| --------- | ------------------------------- |
+| `info`    | Show info about a `.pak` file   |
+| `list`    | List all files in the archive   |
+| `extract` | Extract one file                |
+| `unpack`  | Unpack all files                |
+| `pack`    | Pack a folder into `.pak`       |
+| `read`    | Read a file and print to stdout |
+
+---
+
+## Examples
+
+```bash
+pyuepak info -p game.pak
+pyuepak unpack -p game.pak -o out/
+pyuepak extract -p game.pak -f "Game/Content/file.txt"
+pyuepak pack -i folder -o new.pak
+```
+
+Encrypted file:
+
+```bash
+pyuepak --aes 1234567890ABCDEF info -p encrypted.pak
+```
+
 ## Usage
 
 ```python

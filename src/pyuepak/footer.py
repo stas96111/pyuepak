@@ -38,7 +38,7 @@ def check_pak_version(reader: Reader) -> PakVersion:
 
 class Footer:
     def __init__(self):
-        self.encryption_key = None
+        self.encryption_key = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         self.is_encrypted = False
         self.version = None
         self.index_offset = 0
