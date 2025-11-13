@@ -113,8 +113,8 @@ def unpack(ctx: click.Context, path, out=None):
 
 @cli.command("pack", help="📦 Pack all files into a .pak archive.")
 @click.option(
-    "--input",
-    "-i",
+    "--path",
+    "-p",
     type=click.Path(exists=True, file_okay=False),
     required=True,
     help="Input folder path to pack.",
@@ -126,12 +126,38 @@ def unpack(ctx: click.Context, path, out=None):
     required=False,
     help="Output .pak file path (default: same name as input folder).",
 )
-def pack(input, out=None):
+@click.option(
+    "--ver",
+    "-v",
+    type=click.STRING,
+    required=False,
+    help="Pak version (number or name. 11 or V11). Default: V11.",
+)
+@click.option(
+    "--mount_point",
+    "-m",
+    type=click.STRING,
+    required=False,
+    help="Mount point path. Default: ../../../",
+)
+def pack(input, out=None, ver: str = PakVersion.V11, mount_point="../../../"):
     try:
         input_dir = Path(input)
         out_file = Path(out) if out else input_dir.with_suffix(".pak")
 
+        if ver.isdigit():
+            num_ver = int(ver)
+            num_ver = num_ver + 1 if num_ver > 8 else num_ver
+            ver = PakVersion(num_ver)
+        else:
+            ver = PakVersion[ver]
+
+        if not ver:
+            click.secho(f"❌ Version not found.", err=True, fg="yellow")
+
         pak = PakFile()
+        pak.set_version(mount_point)
+        pak.set_mount_point(mount_point)
 
         # Collect all files
         files = [f for f in input_dir.rglob("*") if f.is_file()]

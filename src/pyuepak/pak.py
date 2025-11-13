@@ -3,6 +3,7 @@ import os
 import shutil
 import base64
 
+from pathlib import Path
 from .entry import Entry
 from .file_io import Reader, Writer
 from .footer import Footer
@@ -31,11 +32,11 @@ class PakFile:
         self._footer = Footer()
 
     @property
-    def count(self):
+    def count(self) -> int:
         """Get the number of entries in the pak file."""
         return len(self._index.entrys)
 
-    def set_key(self, key: bytes | str):
+    def set_key(self, key: bytes | str) -> None:
         if isinstance(key, str):
             key_str = key.strip()
             try:
@@ -59,7 +60,7 @@ class PakFile:
 
         self.key = byte_key
 
-    def set_mount_point(self, mount_point: str):
+    def set_mount_point(self, mount_point: str) -> None:
         """Set the mount point for the pak file."""
         self.mount_point = mount_point
 
@@ -70,15 +71,18 @@ class PakFile:
 
         self.path_hash_seed = seed
 
-    def set_version(self, version: PakVersion):
+    def set_version(self, version: PakVersion) -> None:
         """Set the version of the pak file."""
         if not isinstance(version, PakVersion):
             raise ValueError("Version must be an instance of PakVersion.")
 
         self.version = version
 
-    def read(self, file: str | bytes):
+    def read(self, file: str | Path | bytes) -> None:
         """Read the pak file."""
+
+        if isinstance(file, Path):
+            file = str(file)
 
         self.reader = Reader(file)
 
@@ -95,8 +99,11 @@ class PakFile:
             self._footer.index_size,
         )
 
-    def write(self, file: str):
+    def write(self, file: str | Path) -> None:
         """Write the pak file."""
+
+        if isinstance(file, Path):
+            file = str(file)
 
         self.reader.reopen()
         writer = Writer(f"{file}.tmp")
@@ -120,22 +127,32 @@ class PakFile:
 
         shutil.move(f"{file}.tmp", file)
 
-    def add_file(self, path: str, data: bytes):
+    def add_file(self, path: str | Path, data: bytes) -> None:
         """Add a file to the pak file."""
+
+        if isinstance(path, Path):
+            path = str(path.as_posix())
+
         entry = Entry()
         self._index.entrys[path] = entry
         entry.data = data
 
-    def remove_file(self, path: str):
+    def remove_file(self, path: str | Path) -> None:
         """Remove a file from the pak file."""
+
+        if isinstance(path, Path):
+            path = str(path.as_posix())
 
         if path in self._index.entrys:
             del self._index.entrys[path]
         else:
             raise KeyError(f"Path '{path}' not found in pak file.")
 
-    def read_file(self, path: str) -> bytes:
+    def read_file(self, path: str | Path) -> bytes:
         """Read a file from the pak file."""
+
+        if isinstance(path, Path):
+            path = str(path.as_posix())
 
         entry = self._index.entrys.get(path)
         if not entry:
@@ -146,20 +163,3 @@ class PakFile:
     def list_files(self) -> list[str]:
         """List all files in the pak file."""
         return list(self._index.entrys.keys())
-
-    def unpack(self, output_dir: str):
-        """Unpack the pak file to the specified directory."""
-
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        entries_list = self.list_files()
-
-        for path in entries_list:
-            entry = self._index.entrys.get(path)
-            file_path = os.path.join(output_dir, path)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            data = entry.read_file(self.reader, self._footer.version, self.key)
-            with open(file_path, "wb") as f:
-                f.write(data)
