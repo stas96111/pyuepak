@@ -1,3 +1,13 @@
+from enum import Enum, auto
+
+
+class COMPRESSION(Enum):
+    NONE = auto()
+    Zlib = auto()
+    Glib = auto()
+    Oodle = auto()
+
+
 class hybrid_method:
     def __init__(self, func):
         self.func = func

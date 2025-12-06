@@ -6,7 +6,7 @@
 
 - Can read and write `.pak` versions 1–11
 - Can read encrypted paks
-- Can read Zlib compressed paks
+- Can read Zlib, Oodle compressed paks
 
 ## Installation
 

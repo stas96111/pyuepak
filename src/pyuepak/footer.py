@@ -1,5 +1,6 @@
 from .file_io import Reader, Writer
 from .version import PakVersion
+from .utils import COMPRESSION
 
 import logging
 
@@ -91,12 +92,15 @@ class Footer:
         elif self.version > PakVersion.V8A:
             char_count = 5
 
-        compresion_data = reader.read(32 * char_count).split(b"\x00")[0].decode()
-
-        if compresion_data:
-            self.compresion = compresion_data
-        else:
-            self.compresion = None
+        # Find all compressions
+        self.compresion = [COMPRESSION.NONE]
+        raw = reader.read(32 * char_count)
+        for i in range(char_count):
+            name_bytes = raw[i * 32 : (i + 1) * 32]
+            name = name_bytes.split(b"\x00")[0].decode().strip()
+            if not name:
+                continue
+            self.compresion.append(COMPRESSION[name])
 
         logger.debug(
             "Footer:"

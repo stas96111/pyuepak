@@ -5,21 +5,18 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from .file_io import Reader, Writer
-from .utils import hybrid_method
+from .utils import hybrid_method, COMPRESSION
 from .version import PakVersion
+from .oodle import oodle
 
 import logging
 import zlib
-from enum import IntEnum
 
 logger = logging.getLogger("pyuepak.entry")
 
 UINT32_MAX = 0xFFFFFFFF
 
-
-class COMPRESSION(IntEnum):
-    NONE = 0
-    ZLIB = 1
+oodle_comp = oodle()
 
 
 def align(offset: int) -> int:
@@ -118,16 +115,16 @@ class Entry:
         return self
 
     @hybrid_method
-    def read_encoded(self, reader: Reader, version: PakVersion):
+    def read_encoded(
+        self, reader: Reader, version: PakVersion, compressions: list[COMPRESSION]
+    ):
         """Read the entry from the encoded reader."""
 
         data = reader.uint32()
 
         compressio_name = (data >> 23) & 0x3F
-        if compressio_name == 0:
-            self.compression = COMPRESSION.NONE
-        else:
-            self.compression = COMPRESSION(compressio_name)
+
+        self.compression = compressions[compressio_name]
 
         self.is_encrypted = bool(data & (1 << 22))
         self.compression_block_count = (data >> 6) & 0xFFFF
@@ -231,16 +228,21 @@ class Entry:
 
         decompressed_data = Writer()
 
-        if self.compression == COMPRESSION.ZLIB:
+        if self.compression == COMPRESSION.NONE:
+            return bytes(data)
+        elif self.compression == COMPRESSION.Zlib:
             for r in ranges:
                 decompressed_data.write(zlib.decompress(data[r.start : r.stop]))
             return decompressed_data.file.getvalue()
-        elif self.compression == COMPRESSION.NONE:
-            return bytes(data)
+        elif self.compression == COMPRESSION.Oodle:
+            chank_size = self.compression_block_size
+            for r in ranges:
+                decompressed_data.write(
+                    oodle_comp.decompress(data[r.start : r.stop], chank_size)
+                )
+            return decompressed_data.file.getvalue()
         else:
-            raise NotImplementedError(
-                f"Compression type {self.compression} not implemented."
-            )
+            raise NotImplementedError(f"{self.compression} not implemented.")
 
     def write_data(self, writer: Writer, version: PakVersion):
         self.offset = writer.get_pos()

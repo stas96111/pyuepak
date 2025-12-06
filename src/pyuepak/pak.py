@@ -11,10 +11,18 @@ from .index import Index
 from .version import PakVersion
 
 logger = logging.getLogger("pyuepak")
+
 handler = logging.StreamHandler()
+fh = logging.FileHandler("spam.log")
+
 formatter = logging.Formatter("[%(name)s]:[%(levelname)s]: %(message)s")
+
 handler.setFormatter(formatter)
+fh.setFormatter(formatter)
+
 logger.addHandler(handler)
+logger.addHandler(fh)
+
 logger.propagate = False
 
 
@@ -97,6 +105,7 @@ class PakFile:
             self._footer.version,
             self._footer.index_offset,
             self._footer.index_size,
+            self._footer.compresion,
         )
 
     def write(self, file: str | Path) -> None:

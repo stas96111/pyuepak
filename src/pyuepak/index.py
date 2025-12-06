@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from .entry import Entry
 from .file_io import Reader, Writer
-from .utils import fnv64, fnv64_path, split_path_child
+from .utils import fnv64, fnv64_path, split_path_child, COMPRESSION
 from .version import PakVersion
 
 from logging import getLogger
@@ -24,7 +24,12 @@ class Index:
         self.entrys: dict[str, Entry] = {}
 
     def read(
-        self, reader: Reader, version: PakVersion, index_offset: int, index_size: int
+        self,
+        reader: Reader,
+        version: PakVersion,
+        index_offset: int,
+        index_size: int,
+        compressions: list[COMPRESSION],
     ):
         """Read the index of the pak file."""
 
@@ -95,7 +100,10 @@ class Index:
                         if encoded_offset >= 0:
                             encoded_offset_reader.set_pos(encoded_offset)
                             entry = Entry()
-                            entry.read_encoded(encoded_offset_reader, version)
+                            logger.debug(f"Reading {dir_name}/{file_name}")
+                            entry.read_encoded(
+                                encoded_offset_reader, version, compressions
+                            )
                         else:
                             index = -encoded_offset - 1
                             entry = not_encoded_entries[index].copy()
