@@ -85,16 +85,10 @@ class Entry:
         self.compressed_size = reader.uint64()
         self.size = reader.uint64()
 
-        compression_name = None
         if version == PakVersion.V8A:
-            compression_name = reader.uint()
+            self.compression = reader.uint()
         else:
-            compression_name = reader.uint32()
-
-        if compression_name == 0:
-            self.compression = COMPRESSION.NONE
-        else:
-            self.compression = COMPRESSION(compression_name)
+            self.compression = reader.uint32()
 
         if version == PakVersion.V1:
             self.timestamp = reader.uint64()
@@ -102,7 +96,7 @@ class Entry:
         self.hash = reader.sha1()
 
         if version >= PakVersion.V3:
-            if self.compression != COMPRESSION.NONE:
+            if self.compression != 0:
                 self.blocks = reader.list(Block().read)
             self.is_encrypted = bool(reader.uint())
             self.compression_block_size = reader.uint32()
@@ -228,19 +222,32 @@ class Entry:
 
         decompressed_data = Writer()
 
+        chunk_size = 0
+        if len(ranges) == 1:
+            chunk_size = self.size
+        else:
+            chunk_size = self.compression_block_size
+
         if self.compression == COMPRESSION.NONE:
             return bytes(data)
+
         elif self.compression == COMPRESSION.Zlib:
             for r in ranges:
                 decompressed_data.write(zlib.decompress(data[r.start : r.stop]))
             return decompressed_data.file.getvalue()
+
         elif self.compression == COMPRESSION.Oodle:
-            chank_size = self.compression_block_size
+            total_uncompressed = self.size
+
+            offset = 0
             for r in ranges:
-                decompressed_data.write(
-                    oodle_comp.decompress(data[r.start : r.stop], chank_size)
-                )
+                expected = min(chunk_size, total_uncompressed - offset)
+                comp_block = data[r.start : r.stop]
+                decompressed_data.write(oodle_comp.decompress(comp_block, expected))
+                offset += expected
+
             return decompressed_data.file.getvalue()
+
         else:
             raise NotImplementedError(f"{self.compression} not implemented.")
 

@@ -142,7 +142,10 @@ class Oodle:
             0,
             3,
         )
-        return bytes(out_buffer)
+        if written == 0:
+            raise CompressionFailed("Oodle decompression failed")
+
+        return bytes(out_buffer[:written])
 
 
 _oodle_singleton = None
