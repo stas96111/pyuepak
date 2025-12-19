@@ -45,23 +45,36 @@ class PakFile:
         return len(self._index.entrys)
 
     def set_key(self, key: bytes | str) -> None:
-        if isinstance(key, str):
+        if isinstance(key, int):
+            try:
+                byte_key = key.to_bytes(32, byteorder="big")
+            except OverflowError:
+                raise ValueError("Integer key is too large to fit in 32 bytes.")
+
+        elif isinstance(key, bytes):
+            byte_key = key
+
+        elif isinstance(key, str):
             key_str = key.strip()
             try:
                 # Try hex first
+                if key_str.startswith("0x"):
+                    key_str = key_str[2:]
                 byte_key = bytes.fromhex(key_str)
+                if len(byte_key) != 32:
+                    raise ValueError
             except ValueError:
                 try:
                     # Try base64
                     byte_key = base64.b64decode(key_str)
+                    if len(byte_key) != 32:
+                        raise ValueError
                 except Exception:
                     raise ValueError(
                         "Invalid key format: must be hex, base64, or bytes"
                     )
-        elif isinstance(key, bytes):
-            byte_key = key
         else:
-            raise TypeError("Key must be str or bytes")
+            raise TypeError("Key must be str, bytes or int.")
 
         if len(byte_key) != 32:
             raise ValueError(f"Invalid key length: {len(byte_key)} bytes (expected 32)")
@@ -100,13 +113,7 @@ class PakFile:
         self.version = self._footer.version
 
         self._index = Index()
-        self._index.read(
-            self.reader,
-            self._footer.version,
-            self._footer.index_offset,
-            self._footer.index_size,
-            self._footer.compresion,
-        )
+        self._index.read(self.reader, self._footer, self.key)
 
     def write(self, file: str | Path) -> None:
         """Write the pak file."""

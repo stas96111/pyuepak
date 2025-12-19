@@ -1,10 +1,14 @@
 import hashlib
 from collections import defaultdict
 
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
 from .entry import Entry
 from .file_io import Reader, Writer
 from .utils import fnv64, fnv64_path, split_path_child, COMPRESSION
 from .version import PakVersion
+from .footer import Footer
 
 from logging import getLogger
 
@@ -17,24 +21,39 @@ def hash_sh1(data: bytes) -> bytes:
     return hasher.digest()  # 20 bytes
 
 
+def decrypt(key: bytes, data: bytes):
+    if key is None or key == bytes(32):
+        raise ValueError("Encryption key is required")
+
+    if len(data) % 16 != 0:
+        raise ValueError("Data length must be a multiple of 16 bytes")
+
+    cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+    decryptor = cipher.decryptor()
+
+    return decryptor.update(data) + decryptor.finalize()
+
+
 class Index:
     def __init__(self):
         self.entry_count = 0
 
         self.entrys: dict[str, Entry] = {}
 
-    def read(
-        self,
-        reader: Reader,
-        version: PakVersion,
-        index_offset: int,
-        index_size: int,
-        compressions: list[COMPRESSION],
-    ):
+    def read(self, reader: Reader, footer: Footer, key: bytes):
         """Read the index of the pak file."""
+
+        version = footer.version
+        index_offset = footer.index_offset
+        index_size = footer.index_size
+        is_encrypted = footer.is_encrypted
+        compressions = footer.compresion
 
         logger.debug("Reading index...")
         index_reader = reader.buffer(index_offset, index_size)
+
+        if is_encrypted:
+            index_reader = Reader(decrypt(key, index_reader.read(index_size)))
 
         self.mount_point = index_reader.string()
         self.entry_count = index_reader.uint32()
@@ -53,6 +72,12 @@ class Index:
                 path_hash_index_reader = reader.buffer(
                     path_hash_index_offset, path_hash_index_size
                 )
+
+                if is_encrypted:
+                    path_hash_index_reader = Reader(
+                        decrypt(key, path_hash_index_reader.read(path_hash_index_size))
+                    )
+
                 count = path_hash_index_reader.uint32()
                 for _ in range(count):
                     path_hash_index.append(
@@ -71,6 +96,15 @@ class Index:
                 full_directory_index_reader = reader.buffer(
                     full_directory_index_offset, full_directory_index_size
                 )
+
+                if is_encrypted:
+                    full_directory_index_reader = Reader(
+                        decrypt(
+                            key,
+                            full_directory_index_reader.read(full_directory_index_size),
+                        )
+                    )
+
                 dir_count = full_directory_index_reader.uint32()
                 for _ in range(dir_count):
                     dir_name = full_directory_index_reader.string()
