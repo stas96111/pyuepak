@@ -127,23 +127,23 @@ class Index:
 
             entrys_by_path = {}
             if has_full_directory_index:
-                encoded_offset_reader = Reader(encoded_entries)
-                for dir_name, files in directories.items():
-                    for file_name, encoded_offset in files.items():
-                        entry = None
-                        if encoded_offset >= 0:
-                            encoded_offset_reader.set_pos(encoded_offset)
-                            entry = Entry()
-                            logger.debug(f"Reading {dir_name}/{file_name}")
-                            entry.read_encoded(
-                                encoded_offset_reader, version, compressions
-                            )
-                        else:
-                            index = -encoded_offset - 1
-                            entry = not_encoded_entries[index].copy()
+                with Reader(encoded_entries) as encoded_offset_reader:
+                    for dir_name, files in directories.items():
+                        for file_name, encoded_offset in files.items():
+                            entry = None
+                            if encoded_offset >= 0:
+                                encoded_offset_reader.set_pos(encoded_offset)
+                                entry = Entry()
+                                logger.debug(f"Reading {dir_name}/{file_name}")
+                                entry.read_encoded(
+                                    encoded_offset_reader, version, compressions
+                                )
+                            else:
+                                index = -encoded_offset - 1
+                                entry = not_encoded_entries[index].copy()
 
-                        path = dir_name.lstrip("/") + file_name
-                        entrys_by_path[path] = entry
+                            path = dir_name.lstrip("/") + file_name
+                            entrys_by_path[path] = entry
 
             self.entrys = entrys_by_path
 
@@ -182,48 +182,46 @@ class Index:
                 entrys_offsets.append((path, encoded_entries.get_pos()))
                 entry.write_encoded(encoded_entries, version)
 
-            bytes_before_phi = (
-                105 + len(mount_point) + len(encoded_entries.file.getvalue())
-            )
+            bytes_before_phi = 105 + len(mount_point) + len(encoded_entries.getvalue())
 
             phi_offset = self.offset + bytes_before_phi
             phi_buf = Writer()
 
             generate_phi(phi_buf, entrys_offsets, path_hash_seed)
 
-            fdi_offset = phi_offset + len(phi_buf.file.getvalue())
+            fdi_offset = phi_offset + len(phi_buf.getvalue())
             fdi_buf = Writer()
 
             generate_fdi(fdi_buf, entrys_offsets)
 
             index_buf.uint32(1)
             index_buf.uint64(phi_offset)
-            index_buf.uint64(len(phi_buf.file.getvalue()))
-            index_buf.write(hash_sh1(phi_buf.file.getvalue()))
+            index_buf.uint64(len(phi_buf.getvalue()))
+            index_buf.write(hash_sh1(phi_buf.getvalue()))
 
             index_buf.uint32(1)
             index_buf.uint64(fdi_offset)
-            index_buf.uint64(len(fdi_buf.file.getvalue()))
-            index_buf.write(hash_sh1(fdi_buf.file.getvalue()))
+            index_buf.uint64(len(fdi_buf.getvalue()))
+            index_buf.write(hash_sh1(fdi_buf.getvalue()))
 
-            index_buf.uint32(len(encoded_entries.file.getvalue()))
-            index_buf.write(encoded_entries.file.getvalue())
+            index_buf.uint32(len(encoded_entries.getvalue()))
+            index_buf.write(encoded_entries.getvalue())
             index_buf.uint32(0)
         else:
             for path, entry in self.entrys.items():
                 index_buf.string(path)
                 entry.write(index_buf, version)
 
-        self.hash = hash_sh1(index_buf.file.getvalue())
-        self.size = len(index_buf.file.getvalue())
+        self.hash = hash_sh1(index_buf.getvalue())
+        self.size = len(index_buf.getvalue())
 
-        writer.write(index_buf.file.getvalue())
+        writer.write(index_buf.getvalue())
 
         if phi_buf:
-            writer.write(phi_buf.file.getvalue())
+            writer.write(phi_buf.getvalue())
 
         if fdi_buf:
-            writer.write(fdi_buf.file.getvalue())
+            writer.write(fdi_buf.getvalue())
 
 
 def generate_phi(writer: Writer, entries: list[tuple[str, int]], path_hash_seed=0):

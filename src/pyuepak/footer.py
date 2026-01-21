@@ -2,6 +2,8 @@ from .file_io import Reader, Writer
 from .version import PakVersion
 from .utils import COMPRESSION
 
+from io import SEEK_END
+
 import logging
 
 logger = logging.getLogger("pyuepak.footer")
@@ -53,22 +55,22 @@ class Footer:
 
         self.version = check_pak_version(reader)
         if self.version < PakVersion.V4:
-            reader.set_pos(44, end=True)
+            reader.set_pos(44, SEEK_END)
         elif self.version < PakVersion.V7:
-            reader.set_pos(45, end=True)
+            reader.set_pos(45, SEEK_END)
         elif self.version == PakVersion.V7:
-            reader.set_pos(65, end=True)
+            reader.set_pos(65, SEEK_END)
         elif self.version == PakVersion.V8A:
-            reader.set_pos(193, end=True)
+            reader.set_pos(193, SEEK_END)
         elif self.version == PakVersion.V9:
-            reader.set_pos(226, end=True)
+            reader.set_pos(226, SEEK_END)
         else:
-            reader.set_pos(225, end=True)
+            reader.set_pos(225, SEEK_END)
 
         if self.version >= PakVersion.V7:
             self.encryption_key = reader.sha1()
         if self.version >= PakVersion.V4:
-            self.is_encrypted = reader.uint() == 1
+            self.is_encrypted = reader.uint8() == 1
 
         magic = reader.uint32()
 
@@ -84,7 +86,7 @@ class Footer:
         self.hash = reader.sha1()
 
         if self.version == PakVersion.V9:
-            self.is_frozen = reader.uint()
+            self.is_frozen = reader.uint8()
 
         char_count = 0
         if self.version == PakVersion.V8A:
@@ -117,7 +119,7 @@ class Footer:
         if version >= PakVersion.V7:
             writer.uint128(0)
         if version >= PakVersion.V4:
-            writer.uint(0)  # is encrypted TODO
+            writer.uint8(0)  # is encrypted TODO
 
         writer.uint32(PAK_MAGIC)
 
@@ -131,7 +133,7 @@ class Footer:
         writer.write(hash)
 
         if version == PakVersion.V9:
-            writer.uint(0)  # is frozen
+            writer.uint8(0)  # is frozen
 
         algo_size = 0
         if version == PakVersion.V8A:

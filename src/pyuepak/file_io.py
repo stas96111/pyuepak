@@ -1,159 +1,488 @@
-from io import BytesIO
+from io import SEEK_CUR, SEEK_END, SEEK_SET, BytesIO
+import mmap
+import os
+import struct
 from uuid import UUID
+from typing import List, Optional
+from pathlib import Path
+
+_STRUCTS = {
+    "<": {
+        "u8": struct.Struct("<B"),
+        "u16": struct.Struct("<H"),
+        "u32": struct.Struct("<I"),
+        "u64": struct.Struct("<Q"),
+        "i8": struct.Struct("<b"),
+        "i16": struct.Struct("<h"),
+        "i32": struct.Struct("<i"),
+        "i64": struct.Struct("<q"),
+    },
+    ">": {
+        "u8": struct.Struct(">B"),
+        "u16": struct.Struct(">H"),
+        "u32": struct.Struct(">I"),
+        "u64": struct.Struct(">Q"),
+        "i8": struct.Struct(">b"),
+        "i16": struct.Struct(">h"),
+        "i32": struct.Struct(">i"),
+        "i64": struct.Struct(">q"),
+    },
+}
 
 
-def _is_ascii(s):
-    return all(ord(c) < 128 for c in s)
+class Endian:
+    BIG = ">"
+    LITTLE = "<"
 
 
-class IOBase:
-    def __init__(self, file: str | BytesIO):
-        self.file = file
+class Reader:
+    __slots__ = (
+        "path",
+        "size",
+        "pos",
+        "endian",
+        "_mm",
+        "_view",
+        "_file_obj",
+        "_u8",
+        "_u16",
+        "_u32",
+        "_u64",
+        "_i8",
+        "_i16",
+        "_i32",
+        "_i64",
+    )
 
-    def get_pos(self):
-        return self.file.tell()
+    def __init__(self, file: Path | str | bytes = b"", endian: str = "<"):
+        self.path = None
+        self.size = 0
+        self.pos = 0
+        self.set_endian(endian)
 
-    def set_pos(self, position: int, end=False):
-        self.file.seek(-position if end else position, 2 if end else 0)
+        self._mm = None
+        self._view = None
+        self._file_obj = None
 
-    def get_size(self):
-        current_pos = self.file.tell()
-        self.file.seek(0, 2)
-        size = self.file.tell()
-        self.file.seek(current_pos)
-        return size
+        if isinstance(file, str):
+            self.path = str(Path(file))
+            self._file_obj = open(file, "rb")
+            self._mm = mmap.mmap(self._file_obj.fileno(), 0, access=mmap.ACCESS_READ)
+            self._view = memoryview(self._mm)
+            self.size = len(self._mm)
+        elif isinstance(file, (bytes, bytearray)):
+            self._mm = None  # IMPORTANT
+            self._view = memoryview(file)
+            self.size = len(file)
+        else:
+            raise ValueError("File must be: str(path), bytes, or bytearray.")
+
+    def set_endian(self, endian: str = ">"):
+        self.endian = endian
+        s = _STRUCTS[endian]
+        self._u8 = s["u8"]
+        self._u16 = s["u16"]
+        self._u32 = s["u32"]
+        self._u64 = s["u64"]
+        self._i8 = s["i8"]
+        self._i16 = s["i16"]
+        self._i32 = s["i32"]
+        self._i64 = s["i64"]
 
     def close(self):
-        self.file.close()
+        if self._view is not None:
+            self._view.release()
+            self._view = None
 
+        if self._mm is not None:
+            self._mm.close()
+            self._mm = None
 
-class Reader(IOBase):
-    def __init__(self, file=None):
-        self.path = file
-        if isinstance(file, str):
-            self.file = open(file, "rb")
-        elif isinstance(file, bytes):
-            self.file = BytesIO(file)
-        else:
-            self.file = BytesIO()
+        if self._file_obj is not None:
+            self._file_obj.close()
+            self._file_obj = None
 
     def reopen(self):
-        self.__init__(self.path)
+        """Reopen the file if it was closed."""
+        if self.path and self._file_obj is None:
+            self._file_obj = open(self.path, "rb")
+            self._mm = mmap.mmap(self._file_obj.fileno(), 0, access=mmap.ACCESS_READ)
+            self._view = memoryview(self._mm)
+            self.size = len(self._mm)
+            self.pos = 0
 
-    def read(self, size: int):
-        return self.file.read(size)
+    def get_pos(self):
+        return self.pos
 
-    def uint(self):
-        return int.from_bytes(self.file.read(1), byteorder="little")
+    def set_pos(self, position: int, where=SEEK_SET):
+        if where == SEEK_CUR:
+            self.pos += position
+        elif where == SEEK_END:
+            self.pos = self.size - abs(position)
+        elif where == SEEK_SET:
+            self.pos = position
 
-    def uint32(self):
-        return int.from_bytes(self.file.read(4), byteorder="little")
+    def move(self, offset: int):
+        self.set_pos(offset, SEEK_CUR)
 
-    def uint64(self):
-        return int.from_bytes(self.file.read(8), byteorder="little")
+    def get_size(self):
+        return self.size
 
-    def int(self):
-        return int.from_bytes(self.file.read(1), byteorder="little", signed=True)
+    def read(self, size: int) -> bytes:
+        """Read bytes directly from memory-mapped file without bounds checking in hot path."""
+        pos = self.pos
+        end = pos + size
+        if end > self.size:
+            raise EOFError(f"Attempt to read {size} beyond the end of the file.")
+        data = self._view[pos:end]
+        self.pos = end
+        return data.tobytes()
 
-    def int32(self):
-        return int.from_bytes(self.file.read(4), byteorder="little", signed=True)
+    def read_int(self, size: int, signed: bool = False, byteorder="little") -> int:
+        val = self._view[self.pos : self.pos + size]
+        self.pos += size
+        return int.from_bytes(val, byteorder=byteorder, signed=signed)
 
-    def int64(self):
-        return int.from_bytes(self.file.read(8), byteorder="little", signed=True)
+    def read_into(self, size: int, buffer) -> int:
+        """Read directly into a pre-allocated buffer for zero-copy efficiency."""
+        pos = self.pos
+        end = pos + size
+        if end > self.size:
+            raise EOFError(f"Attempt to read {size} beyond the end of the file.")
+        buffer[:] = self._view[pos:end]
+        self.pos = end
+        return size
 
-    def sha1(self):
-        return self.file.read(20)
+    def uint(self) -> int:
+        val = self._u8.unpack_from(self._view, self.pos)[0]
+        self.pos += 1
+        return val
+
+    def uint8(self) -> int:
+        val = self._u8.unpack_from(self._view, self.pos)[0]
+        self.pos += 1
+        return val
+
+    def uint16(self) -> int:
+        val = self._u16.unpack_from(self._view, self.pos)[0]
+        self.pos += 2
+        return val
+
+    def uint32(self) -> int:
+        val = self._u32.unpack_from(self._view, self.pos)[0]
+        self.pos += 4
+        return val
+
+    def uint64(self) -> int:
+        val = self._u64.unpack_from(self._view, self.pos)[0]
+        self.pos += 8
+        return val
+
+    def int(self) -> int:
+        val = self._i8.unpack_from(self._view, self.pos)[0]
+        self.pos += 1
+        return val
+
+    def int8(self) -> int:
+        val = self._i8.unpack_from(self._view, self.pos)[0]
+        self.pos += 1
+        return val
+
+    def int16(self) -> int:
+        val = self._i16.unpack_from(self._view, self.pos)[0]
+        self.pos += 2
+        return val
+
+    def int32(self) -> int:
+        val = self._i32.unpack_from(self._view, self.pos)[0]
+        self.pos += 4
+        return val
+
+    def int64(self) -> int:
+        val = self._i64.unpack_from(self._view, self.pos)[0]
+        self.pos += 8
+        return val
+
+    def sha1(self) -> bytes:
+        return self.read(20)
+
+    def guid(self) -> UUID:
+        data = self.read(16)
+        return UUID(bytes_le=data)
 
     def string(self, length=None):
         if length is None:
             length = self.int32()
-        string = ""
 
         if length > 0:
-            string = self.file.read(length).decode("ascii", errors="replace")
+            s = self._view[self.pos : self.pos + length]
+            self.pos += length
+            return bytes(s).decode("ascii", errors="replace").rstrip("\0")
         elif length < 0:
-            string = self.file.read(length * -2).decode("utf-16le", errors="replace")
-        elif length == 0:
-            string = ""
-
+            # string = self.read(length * -2).decode("utf-16le", errors="replace")
+            size = length * -2
+            s = self._view[self.pos : self.pos + size]
+            self.pos += size
+            return bytes(s).decode("utf-16le", errors="replace").rstrip("\0")
+        else:
+            return ""
         return string.rstrip("\0")
+
+    def list(self, func, length=None):
+        if length is None:
+            length = self.uint32()
+        return [func(self) for _ in range(length)]
 
     def strings_list(self, length=None):
         return self.list(self.string, length=length)
 
-    def list(self, func, length=None):
-        if not length:
-            length = self.uint32()
-        out_list = [func(self) for i in range(length)]
-        return out_list
+    def buffer(self, offset, size):
+        data = self._view[offset : offset + size].tobytes()
+        return Reader(data)
 
-    def buffer(self, offset: int = None, size: int = None):
-        if offset is None:
-            offset = self.get_pos()
+    def reopen(self):
+        self.close()
+        if self.path is None:
+            self.__init__(endian=self.endian)
+        elif self._mm is None:
+            self.__init__(self.path, endian=self.endian)
 
-        current_pos = self.get_pos()
-        self.set_pos(offset)
-        buffer = Reader(self.read(size) if size else self.read())
-        self.set_pos(current_pos)
-        return buffer
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
 
-class Writer(IOBase):
-    def __init__(self, path=None):
-        if path:
-            self.file = open(path, "wb")
+class Writer:
+    __slots__ = (
+        "path",
+        "size",
+        "pos",
+        "endian",
+        "_mm",
+        "_view",
+        "_file_obj",
+        "_buf",
+        "_u8",
+        "_u16",
+        "_u32",
+        "_u64",
+        "_i8",
+        "_i16",
+        "_i32",
+        "_i64",
+    )
+
+    def __init__(
+        self, file: str | int | None = None, endian: str = "<", initial_size=1024
+    ):
+        """
+        file:
+          - str  -> file path (mmap-backed)
+          - None -> in-memory (bytearray)
+        """
+        self.path = None
+        self.pos = 0
+        self.size = 0
+        self._mm = None
+        self._view = None
+        self._file_obj = None
+        self._buf = None
+
+        self.set_endian(endian)
+
+        if isinstance(file, str):
+            self.path = file
+            self._file_obj = open(file, "w+b")
+            self._file_obj.truncate(initial_size)
+            self._mm = mmap.mmap(self._file_obj.fileno(), initial_size)
+            self._view = memoryview(self._mm)
+            self.size = initial_size
+
+        elif file is None:
+            self._buf = bytearray(initial_size)
+            self._view = memoryview(self._buf)
+            self.size = initial_size
+
         else:
-            self.file = BytesIO()
+            raise ValueError("Writer file must be: str(path) or None")
 
-    def write(self, data):
-        self.file.write(data)
+    # ------------------ internal ------------------
 
-    def uint(self, value: int):
-        self.file.write(value.to_bytes(1, "little"))
+    def _ensure(self, needed: int):
+        if self.pos + needed <= self.size:
+            return
 
-    def uint32(self, value: int):
-        self.file.write(value.to_bytes(4, "little"))
+        new_size = max(self.size * 2, self.pos + needed)
 
-    def uint64(self, value: int):
-        self.file.write(value.to_bytes(8, "little"))
+        if self._mm is not None:
+            self._mm.resize(new_size)
+            self._view = memoryview(self._mm)
+        else:
+            self._buf.extend(b"\x00" * (new_size - self.size))
+            self._view = memoryview(self._buf)
 
-    def uint128(self, value: int):
-        self.file.write(value.to_bytes(16, "little"))
+        self.size = new_size
 
-    def int(self, value: int):
-        self.file.write(value.to_bytes(1, "little", signed=True))
+    # ------------------ endian ------------------
 
-    def int32(self, value: int):
-        self.file.write(value.to_bytes(4, "little", signed=True))
+    def set_endian(self, endian: str):
+        self.endian = endian
+        s = _STRUCTS[endian]
+        self._u8 = s["u8"]
+        self._u16 = s["u16"]
+        self._u32 = s["u32"]
+        self._u64 = s["u64"]
+        self._i8 = s["i8"]
+        self._i16 = s["i16"]
+        self._i32 = s["i32"]
+        self._i64 = s["i64"]
 
-    def int64(self, value: int):
-        self.file.write(value.to_bytes(8, "little", signed=True))
+    # ------------------ position ------------------
 
-    def int128(self, value: int):
-        self.file.write(value.to_bytes(16, "little", signed=True))
+    def get_pos(self):
+        return self.pos
 
-    def sha1(self, value: bytes):
-        self.file.write(value)  # Write 20 bytes for SHA1
+    def set_pos(self, position: int, where=SEEK_SET):
+        if where == SEEK_SET:
+            self.pos = position
+        elif where == SEEK_CUR:
+            self.pos += position
+        elif where == SEEK_END:
+            self.pos = self.size - position
+        else:
+            raise ValueError("Invalid seek mode")
 
-    def string(self, value: str, use_unicode=False):
+    def move(self, offset: int):
+        self.pos += offset
+
+    # ------------------ raw write ------------------
+
+    def write(self, data: bytes | bytearray | memoryview):
+        n = len(data)
+        self._ensure(n)
+        self._view[self.pos : self.pos + n] = data
+        self.pos += n
+
+    # ------------------ typed writes ------------------
+
+    def uint8(self, v: int):
+        self._ensure(1)
+        self._u8.pack_into(self._view, self.pos, v)
+        self.pos += 1
+
+    def uint16(self, v: int):
+        self._ensure(2)
+        self._u16.pack_into(self._view, self.pos, v)
+        self.pos += 2
+
+    def uint32(self, v: int):
+        self._ensure(4)
+        self._u32.pack_into(self._view, self.pos, v)
+        self.pos += 4
+
+    def uint64(self, v: int):
+        self._ensure(8)
+        self._u64.pack_into(self._view, self.pos, v)
+        self.pos += 8
+
+    def uint128(self, v: int):
+        self._ensure(16)
+        self._view[self.pos : self.pos + 16] = v.to_bytes(
+            16, "little" if self.endian == "<" else "big", signed=False
+        )
+        self.pos += 16
+
+    def int8(self, v: int):
+        self._ensure(1)
+        self._i8.pack_into(self._view, self.pos, v)
+        self.pos += 1
+
+    def int16(self, v: int):
+        self._ensure(2)
+        self._i16.pack_into(self._view, self.pos, v)
+        self.pos += 2
+
+    def int32(self, v: int):
+        self._ensure(4)
+        self._i32.pack_into(self._view, self.pos, v)
+        self.pos += 4
+
+    def int64(self, v: int):
+        self._ensure(8)
+        self._i64.pack_into(self._view, self.pos, v)
+        self.pos += 8
+
+    def int128(self, v: int):
+        self._ensure(16)
+        self._view[self.pos : self.pos + 16] = v.to_bytes(
+            16, "little" if self.endian == "<" else "big", signed=True
+        )
+        self.pos += 16
+
+    # ------------------ output ------------------
+
+    def getvalue(self) -> bytes:
+        if self._buf is None:
+            raise RuntimeError("Writer is file-backed")
+        return bytes(self._buf[: self.pos])
+
+    def close(self):
+        # Release memoryview FIRST
+        if self._view is not None:
+            try:
+                self._view.release()
+            except AttributeError:
+                pass
+            self._view = None
+
+        # Shrink file-backed storage to actual data size
+        if self._mm is not None:
+            self._mm.flush()
+            self._mm.close()
+            self._mm = None
+
+            # IMPORTANT: truncate AFTER closing mmap
+            self._file_obj.truncate(self.pos)
+
+        # Then close file
+        if self._file_obj is not None:
+            self._file_obj.close()
+            self._file_obj = None
+
+    def sha1(self, data: bytes):
+        if len(data) != 20:
+            raise ValueError("SHA1 must be 20 bytes")
+        self.write(data)
+
+    def guid(self, value: UUID):
+        self.write(value.bytes_le)
+
+    def string(self, value: str, use_unicode: bool = False):
         value += "\x00"
-        if (not use_unicode) and _is_ascii(value):
+        if (not use_unicode) and value.isascii():
             self.uint32(len(value))
             self.write(value.encode("ascii"))
         else:
-            length = int(len(value.encode("utf-16le")) / 2 * -1)
-            self.int32(length)
-            self.write(value.encode("utf-16le"))
+            encoded = value.encode("utf-16le")
+            self.int32(-(len(encoded) // 2))
+            self.write(encoded)
 
-    def list(self, list_items, use_length=False):
-        if use_length:
+    def list(self, list_items: List[bytes], write_length: bool = False):
+        if write_length:
             self.uint32(len(list_items))
         for item in list_items:
             self.write(item)
 
-    def strings_list(self, list_items, use_length=False):
-        if use_length:
-            print("Length: ", len(list_items))
+    def strings_list(self, list_items: List[str], write_length: bool = False):
+        if write_length:
             self.uint32(len(list_items))
         for item in list_items:
             self.string(item)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
