@@ -13,7 +13,7 @@ def common_options(func):
 @click.option("--aes", type=str, help="AES key (hex string).")
 @click.pass_context
 def cli(ctx: click.Context, aes):
-    """🗂️  pylocres — a Python library for working with Unreal Engine .pak files."""
+    """🗂️  pyuepak — a Python library for working with Unreal Engine .pak files."""
     ctx.ensure_object(dict)
     ctx.obj["aes"] = aes
 
