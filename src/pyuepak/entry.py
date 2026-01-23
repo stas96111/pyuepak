@@ -52,6 +52,8 @@ class Entry:
         "compression_block_count",
         "size",
         "hash",
+        "flags",
+        "timestamp",
         "compressed_size",
     )
 
@@ -64,6 +66,9 @@ class Entry:
         self.compression_block_size = 0
         self.compression_block_count = 0
         self.size = 0
+        self.flags = 0
+        self.timestamp = 0
+        self.hash = None
         self.compressed_size = 0
 
     def __repr__(self):
@@ -115,7 +120,7 @@ class Entry:
 
         if version >= PakVersion.V3:
             if self.compression != COMPRESSION.NONE:
-                self.blocks = reader.list(Block().read)
+                self.blocks = reader.list(Block.read)
             self.is_encrypted = bool(reader.uint8())
             self.compression_block_size = reader.uint32()
 
@@ -195,87 +200,6 @@ class Entry:
 
         return self
 
-    def extract_file(
-        self, reader: Reader, version: PakVersion, key: bytes, out: io.BytesIO
-    ):
-        CHUNK = 512 * 1024  # Larger chunk for better throughput
-        reader.set_pos(self.offset)
-
-        # Discard the entry header
-        _discard_entry = Entry.read(reader, version)
-        data_offset = reader.get_pos()
-
-        # Cache values to reduce attribute lookups in hot path
-        is_encrypted = self.is_encrypted
-        compression = self.compression
-        size = self.size
-        compressed_size = self.compressed_size
-        compression_block_size = self.compression_block_size
-        blocks = self.blocks
-
-        # Initialize cipher once if needed
-        decryptor = None
-        if is_encrypted:
-            cipher = Cipher(
-                algorithms.AES(key),
-                modes.ECB(),
-                backend=default_backend(),
-            )
-            decryptor = cipher.decryptor()
-
-        if compression == COMPRESSION.NONE:
-            # Uncompressed: fast path for small files
-            if not is_encrypted and size < 1024 * 1024:  # < 1MB
-                # Ultra-fast path: single read for small uncompressed files
-                out.write(reader.read(size))
-            else:
-                # Standard path for larger files
-                remaining = size
-                while remaining:
-                    chunk_to_read = min(CHUNK, remaining)
-                    chunk = reader.read(chunk_to_read)
-                    if is_encrypted:
-                        chunk = decryptor.update(chunk)
-                    remaining -= len(chunk)
-                    out.write(chunk)
-        else:
-            # Compressed: handle blocks efficiently
-            if compression == COMPRESSION.Zlib:
-                decompressor = zlib.decompressobj()
-            elif compression == COMPRESSION.Oodle:
-                decompressor = oodle_comp
-            else:
-                raise NotImplementedError(f"{compression} not supported")
-
-            total_written = 0
-            block_list = blocks if blocks else [None]
-
-            for block in block_list:
-                if block:
-                    expected = min(compression_block_size, size - total_written)
-                    remaining = block.end - block.start
-                    reader.set_pos(data_offset + block.start)
-                else:
-                    expected = size
-                    remaining = compressed_size
-                    reader.set_pos(data_offset)
-
-                while remaining:
-                    chunk_to_read = min(CHUNK, remaining)
-                    chunk = reader.read(chunk_to_read)
-                    remaining -= len(chunk)
-
-                    if is_encrypted:
-                        chunk = decryptor.update(chunk)
-
-                    if compression == COMPRESSION.Zlib:
-                        chunk = decompressor.decompress(chunk)
-                    elif compression == COMPRESSION.Oodle:
-                        chunk = decompressor.decompress(chunk, expected)
-
-                    total_written += len(chunk)
-                    out.write(chunk)
-
     @hybrid_method
     def read_file(self, reader: Reader, version: PakVersion, key: bytes):
         """Read the entry from the file."""
@@ -284,11 +208,11 @@ class Entry:
         # Read and discard the entry header from the file - we already have the metadata from the index
         _discard_entry = Entry.read(reader, version)
         data_offset = reader.get_pos()
-        data = io.BytesIO()
+        data = None
         if self.is_encrypted:
-            data.write(reader.read(align(self.compressed_size)))
+            data = reader.read(align(self.compressed_size))
         else:
-            data.write(reader.read(self.compressed_size))
+            data = reader.read(self.compressed_size)
 
         if self.is_encrypted:
             cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
@@ -304,7 +228,7 @@ class Entry:
                     decrypted_data.extend(block)
 
             # Truncate to original compressed size
-            data.write(decrypted_data[: self.compressed_size])
+            data = decrypted_data[: self.compressed_size]
 
         ranges = []
         if self.blocks:
@@ -317,7 +241,7 @@ class Entry:
 
             ranges = [range(offset(b.start), offset(b.end)) for b in self.blocks]
         else:
-            ranges = [range(0, len(data))]
+            ranges = [range(0, self.compressed_size)]
 
         decompressed_data = io.BytesIO()
 
@@ -333,7 +257,7 @@ class Entry:
         elif self.compression == COMPRESSION.Zlib:
             for r in ranges:
                 decompressed_data.write(zlib.decompress(data[r.start : r.stop]))
-            return decompressed_data
+            return decompressed_data.getvalue()
 
         elif self.compression == COMPRESSION.Oodle:
             total_uncompressed = self.size
@@ -345,7 +269,7 @@ class Entry:
                 decompressed_data.write(oodle_comp.decompress(comp_block, expected))
                 offset += expected
 
-            return decompressed_data
+            return decompressed_data.getvalue()
 
         else:
             raise NotImplementedError(f"{self.compression} not implemented.")
@@ -404,7 +328,7 @@ class Entry:
             if self.compressio_name is not None:
                 pass  # TODO: Compression
             self.flags = writer.uint8(0)  # TODO
-            self.compressio_block_size = writer.uint32(0)  # 0 if not compressed
+            self.compression_block_size = writer.uint32(0)  # 0 if not compressed
 
     def write_encoded(self, writer: Writer, version: PakVersion):
         compression_block_size = (self.compression_block_size >> 11) & 0x3F

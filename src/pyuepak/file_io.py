@@ -203,6 +203,10 @@ class Reader:
         self.pos += 8
         return val
 
+    def bool(self) -> bool:
+        val = self.uint8()
+        return val != 0
+
     def sha1(self) -> bytes:
         return self.read(20)
 
@@ -317,7 +321,12 @@ class Writer:
         new_size = max(self.size * 2, self.pos + needed)
 
         if self._mm is not None:
+            if self._view is not None:
+                self._view.release()
+                self._view = None
+
             self._mm.resize(new_size)
+
             self._view = memoryview(self._mm)
         else:
             self._buf.extend(b"\x00" * (new_size - self.size))
@@ -420,6 +429,9 @@ class Writer:
             16, "little" if self.endian == "<" else "big", signed=True
         )
         self.pos += 16
+
+    def bool(self, v: bool):
+        self.uint8(1 if v else 0)
 
     # ------------------ output ------------------
 

@@ -163,6 +163,8 @@ class PakFile:
         self._index = Index()
         self._index.read(self.reader, self._footer, self.key)
 
+        self.reader.close()
+
     def write(self, file: str | Path) -> None:
         """Write the pak file."""
 
@@ -223,6 +225,9 @@ class PakFile:
     def read_file(self, path: str | Path) -> bytes:
         """Read a file from the pak file."""
 
+        if self.reader:
+            self.reader.reopen()
+
         if isinstance(path, Path):
             path = str(path.as_posix())
 
@@ -230,126 +235,6 @@ class PakFile:
         if not entry:
             logger.debug(f"Entry for path '{path}' not found.")
             raise KeyError(f"Path '{path}' not found in pak file.")
-        buf = io.BytesIO()
-        entry.extract_file(self.reader, self.version, self.key, buf)
-        return buf.getvalue()
-
-    @classmethod
-    def unpack(
-        cls,
-        input_pak: str | Path,
-        output_dir: str | Path = "./out",
-        key: str | bytes = None,
-        progress=False,
-    ):
-        """
-        Unpack a pak file to a directory.
-
-        Args:
-            input_pak: Path to the pak file
-            output_dir: Output directory path
-            key: Encryption key if needed
-            progress: Print progress information (default: False)
-        """
-        pak = cls()
-        if key is not None:
-            pak.set_key(key)
-        pak.read(input_pak)
-
-        if isinstance(output_dir, str):
-            output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build jobs list with sizes for batching strategy
-        SMALL_FILE_THRESHOLD = 256 * 1024  # 256KB threshold
-
-        jobs_data = [
-            (
-                pak.reader.path,
-                output_dir / path.lstrip("/\\"),
-                pak.version,
-                pak.key,
-                entry.offset,
-                entry.size,
-                entry.compressed_size,
-                entry.compression,
-                entry.is_encrypted,
-                entry.size,  # For sorting
-            )
-            for path, entry in pak._index.entrys.items()
-        ]
-
-        # Separate large and small files
-        large_jobs = []
-        small_jobs = []
-
-        for job_data in jobs_data:
-            job = job_data[:-1]  # Remove sort key
-            size = job_data[9]
-            if size >= SMALL_FILE_THRESHOLD:
-                large_jobs.append(job)
-            else:
-                small_jobs.append(job)
-
-        # Sort large files by size (largest first) for better load balancing
-        large_jobs.sort(key=lambda x: x[5], reverse=True)
-
-        # Create batches of small files for each thread
-        num_workers = min(os.cpu_count() * 2, max(1, len(large_jobs) + 1))
-
-        if small_jobs and num_workers > 1:
-            # Batch small files - one batch per thread
-            batch_size = max(1, len(small_jobs) // num_workers)
-            small_batches = [
-                small_jobs[i : i + batch_size]
-                for i in range(0, len(small_jobs), batch_size)
-            ]
-            # Convert single-item batches back to regular jobs for efficiency
-            batched_jobs = []
-            regular_jobs = []
-            for batch in small_batches:
-                if len(batch) > 1:
-                    batched_jobs.append(batch)
-                else:
-                    regular_jobs.extend(batch)
-
-            # Combine: large jobs + batches + regular small jobs
-            all_tasks = large_jobs + regular_jobs
-        else:
-            all_tasks = large_jobs + small_jobs
-            batched_jobs = []
-
-        # Use ThreadPoolExecutor with optimal worker count
-        with ThreadPoolExecutor(max_workers=num_workers) as pool:
-            if progress:
-                from tqdm import tqdm
-
-                total_items = len(all_tasks) + len(batched_jobs)
-
-                # Process large jobs and small jobs
-                futures = []
-                for task in all_tasks:
-                    futures.append(pool.submit(_unpack_one, task))
-
-                # Process batches
-                for batch in batched_jobs:
-                    futures.append(pool.submit(_unpack_batch, batch))
-
-                for _ in tqdm(futures, total=total_items):
-                    _
-            else:
-                # Process large jobs and small jobs
-                for task in all_tasks:
-                    pool.submit(_unpack_one, task).result()
-
-                # Process batches
-                for batch in batched_jobs:
-                    pool.submit(_unpack_batch, batch).result()
-        # Cleanup thread-local reader
-        if hasattr(_thread_local, "reader"):
-            _thread_local.reader.close()
-            delattr(_thread_local, "reader")
-
-    def list_files(self) -> list[str]:
-        """List all files in the pak file."""
-        return list(self._index.entrys.keys())
+        data = entry.read_file(self.reader, self._footer.version, self.key)
+        self.reader.close()
+        return data
