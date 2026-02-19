@@ -326,9 +326,14 @@ class Writer:
                 self._view = None
 
             self._mm.resize(new_size)
-
             self._view = memoryview(self._mm)
+
         else:
+            # Release memoryview before resizing bytearray
+            if self._view is not None:
+                self._view.release()
+                self._view = None
+
             self._buf.extend(b"\x00" * (new_size - self.size))
             self._view = memoryview(self._buf)
 
