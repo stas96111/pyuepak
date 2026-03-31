@@ -21,6 +21,23 @@ def tests(session):
 
 
 @nox.session(venv_backend="venv", requires=["tests"])
+def twine(session):
+    session.run(
+        "python",
+        "-c",
+        "import shutil; shutil.rmtree('dist', ignore_errors=True)",
+    )
+
+    session.install("-r", "requirements.txt")
+    session.install("-e", ".")
+    session.install("build", "twine")
+
+    session.run("python", "-m", "build")
+
+    session.run("twine", "upload", "dist/*")
+
+
+@nox.session(venv_backend="venv", requires=["tests"])
 def release(session):
     session.run(
         "python",

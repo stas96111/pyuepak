@@ -59,16 +59,16 @@ class Footer:
         elif self.version < PakVersion.V7:
             reader.set_pos(45, SEEK_END)
         elif self.version == PakVersion.V7:
-            reader.set_pos(65, SEEK_END)
+            reader.set_pos(61, SEEK_END)
         elif self.version == PakVersion.V8A:
-            reader.set_pos(193, SEEK_END)
+            reader.set_pos(189, SEEK_END)
         elif self.version == PakVersion.V9:
-            reader.set_pos(226, SEEK_END)
+            reader.set_pos(222, SEEK_END)
         else:
-            reader.set_pos(225, SEEK_END)
+            reader.set_pos(221, SEEK_END)
 
         if self.version >= PakVersion.V7:
-            self.encryption_key = reader.sha1()
+            self.encryption_key = reader.read(16)
         if self.version >= PakVersion.V4:
             self.is_encrypted = reader.uint8() == 1
 

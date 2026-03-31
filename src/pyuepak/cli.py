@@ -9,7 +9,7 @@ def common_options(func):
 
 
 @click.group()
-@click.version_option("0.2.0", prog_name="pyuepak")
+@click.version_option("0.2.6.3", prog_name="pyuepak")
 @click.option("--aes", type=str, help="AES key (hex string).")
 @click.pass_context
 def cli(ctx: click.Context, aes):
@@ -61,8 +61,8 @@ def list(ctx: click.Context, path):
         if aes_key:
             pak.set_key(aes_key)
         pak.read(path)
-        for path in pak.list_files():
-            click.secho(path)
+        for file_path in pak.list_files():
+            click.secho(file_path)
     except Exception as e:
         click.secho(f"❌ Failed to read .pak file: {e}", err=True, fg="red")
 
@@ -108,7 +108,7 @@ def unpack(ctx: click.Context, path, out=None):
             f"✅ Unpacked {len(pak.list_files())} files to '{out_dir}'", fg="green"
         )
     except Exception as e:
-        click.secho(f"❌ Failed to pack files: {e}", err=True, fg="red")
+        click.secho(f"❌ Failed to unpack files: {e}", err=True, fg="red")
 
 
 @cli.command("pack", help="📦 Pack all files into a .pak archive.")
@@ -131,6 +131,7 @@ def unpack(ctx: click.Context, path, out=None):
     "-v",
     type=click.STRING,
     required=False,
+    default="V11",
     help="Pak version (number or name. 11 or V11). Default: V11.",
 )
 @click.option(
@@ -138,12 +139,23 @@ def unpack(ctx: click.Context, path, out=None):
     "-m",
     type=click.STRING,
     required=False,
+    default="../../../",
     help="Mount point path. Default: ../../../",
 )
-def pack(input, out=None, ver: str = PakVersion.V11, mount_point="../../../"):
+@common_options
+def pack(
+    ctx: click.Context,
+    path,
+    out=None,
+    ver: str = "V11",
+    mount_point="../../../",
+):
     try:
-        input_dir = Path(input)
+        input_dir = Path(path)
         out_file = Path(out) if out else input_dir.with_suffix(".pak")
+
+        if ver is None:
+            ver = "V11"
 
         if ver.isdigit():
             num_ver = int(ver)
@@ -156,7 +168,7 @@ def pack(input, out=None, ver: str = PakVersion.V11, mount_point="../../../"):
             click.secho(f"❌ Version not found.", err=True, fg="yellow")
 
         pak = PakFile()
-        pak.set_version(mount_point)
+        pak.set_version(ver)
         pak.set_mount_point(mount_point)
 
         # Collect all files
@@ -167,7 +179,7 @@ def pack(input, out=None, ver: str = PakVersion.V11, mount_point="../../../"):
             with open(file_path, "rb") as f:
                 pak.add_file(str(rel_path.as_posix()), f.read())
 
-        pak.write(out_file)
+        pak.write(str(out_file))
 
         click.secho(f"✅ Packed {len(files)} files into '{out_file}'", fg="green")
 
@@ -202,19 +214,15 @@ def extract(ctx: click.Context, path, file, out=None):
     try:
         aes_key = ctx.obj.get("aes")
         pak_path = Path(path)
-        out_dir = (
-            Path(out) if out else pak_path.parent.with_suffix("")
-        )  # e.g. game.pak → game/
+        out_dir = Path(out) if out else pak_path.parent
 
         pak = PakFile()
         if aes_key:
             pak.set_key(aes_key)
         pak.read(str(pak_path.as_posix()))
 
-        # Get the file data
         data = pak.read_file(file)
 
-        # Recreate original path inside the output folder
         out_path = out_dir / Path(file)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(data)
@@ -253,8 +261,7 @@ def read(ctx: click.Context, path, file):
 
         data = pak.read_file(file)
 
-        # Write raw bytes to stdout (not text!)
         sys.stdout.buffer.write(data)
 
     except Exception as e:
-        click.echo(f"❌ Failed to read file from .pak: {e}", err=True)
+        click.secho(f"❌ Failed to read file from .pak: {e}", err=True, fg="red")
