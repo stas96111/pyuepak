@@ -14,3 +14,4 @@ class PakVersion(IntEnum):
     V9 = 10
     V10 = 11
     V11 = 12
+    V12 = 13
