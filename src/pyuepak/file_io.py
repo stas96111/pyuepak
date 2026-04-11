@@ -230,7 +230,23 @@ class Reader:
             return bytes(s).decode("utf-16le", errors="replace").rstrip("\0")
         else:
             return ""
-        return string.rstrip("\0")
+
+    def utf8string(self, length=None):
+        if length is None:
+            length = self.int32()
+
+        if length > 0:
+            s = self._view[self.pos : self.pos + length]
+            self.pos += length
+            return bytes(s).decode("utf-8", errors="replace").rstrip("\0")
+        elif length < 0:
+            # string = self.read(length * -2).decode("utf-16le", errors="replace")
+            size = length * -2
+            s = self._view[self.pos : self.pos + size]
+            self.pos += size
+            return bytes(s).decode("utf-16le", errors="replace").rstrip("\0")
+        else:
+            return ""
 
     def list(self, func, length=None):
         if length is None:

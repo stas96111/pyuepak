@@ -111,7 +111,10 @@ class Index:
                     file_count = full_directory_index_reader.uint32()
                     files = {}
                     for _ in range(file_count):
-                        file_name = full_directory_index_reader.string()
+                        if version >= PakVersion.V12:
+                            file_name = full_directory_index_reader.utf8string()
+                        else:
+                            file_name = full_directory_index_reader.string()
                         files[file_name] = full_directory_index_reader.int32()
                     directories[dir_name] = files
 

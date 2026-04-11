@@ -4,7 +4,7 @@
 
 ## Features
 
-- Can read and write `.pak` versions 1–11
+- Can read and write `.pak` versions 1–12
 - Can read encrypted paks
 - Can read Zlib, Oodle compressed paks
 

@@ -9,7 +9,7 @@ def common_options(func):
 
 
 @click.group()
-@click.version_option("0.2.6.3", prog_name="pyuepak")
+@click.version_option("0.2.7", prog_name="pyuepak")
 @click.option("--aes", type=str, help="AES key (hex string).")
 @click.pass_context
 def cli(ctx: click.Context, aes):
