@@ -26,7 +26,7 @@ def check_pak_version(reader: Reader) -> PakVersion:
     if magic == PAK_MAGIC:
         return PakVersion.V8A
 
-    reader.set_pos(size - 204)  # Version 8B, 10, 11
+    reader.set_pos(size - 204)  # Version 8B, 10, 11, 13
     magic = reader.uint32()
     if magic == PAK_MAGIC:
         return PakVersion(reader.uint32() + 1)
@@ -91,7 +91,7 @@ class Footer:
         char_count = 0
         if self.version == PakVersion.V8A:
             char_count = 4
-        elif self.version > PakVersion.V8A:
+        elif self.version >= PakVersion.V8B:
             char_count = 5
 
         # Find all compressions
