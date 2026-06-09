@@ -17,7 +17,7 @@ import tempfile
 logger = logging.getLogger("pyuepak")
 
 handler = logging.StreamHandler()
-fh = logging.FileHandler("spam.log")
+fh = logging.FileHandler("log.txt", delay=True)
 
 formatter = logging.Formatter("[%(name)s]:[%(levelname)s]: %(message)s")
 
