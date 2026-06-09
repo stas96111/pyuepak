@@ -102,6 +102,7 @@ class Footer:
             name = name_bytes.split(b"\x00")[0].decode().strip()
             if not name:
                 continue
+            name = name.upper()
             self.compresion.append(COMPRESSION[name])
 
         logger.debug(

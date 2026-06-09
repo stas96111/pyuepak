@@ -11,7 +11,7 @@ from .oodle import oodle
 from dataclasses import dataclass
 
 import logging
-import zlib
+import zlib, gzip
 import io
 
 logger = logging.getLogger("pyuepak.entry")
@@ -254,12 +254,16 @@ class Entry:
         if self.compression == COMPRESSION.NONE:
             return data
 
-        elif self.compression == COMPRESSION.Zlib:
+        elif self.compression == COMPRESSION.ZLIB:
             for r in ranges:
                 decompressed_data.write(zlib.decompress(data[r.start : r.stop]))
             return decompressed_data.getvalue()
-
-        elif self.compression == COMPRESSION.Oodle:
+        elif self.compression == COMPRESSION.GZIP:
+            for r in ranges:
+                decompressed_data.write(gzip.decompress(data[r.start : r.stop]))
+            return decompressed_data.getvalue()
+        
+        elif self.compression == COMPRESSION.OODLE:
             total_uncompressed = self.size
 
             offset = 0

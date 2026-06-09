@@ -3,9 +3,9 @@ from enum import Enum, auto
 
 class COMPRESSION(Enum):
     NONE = auto()
-    Zlib = auto()
-    Glib = auto()
-    Oodle = auto()
+    ZLIB = auto()
+    GZIP = auto()
+    OODLE = auto()
 
 
 class hybrid_method:
