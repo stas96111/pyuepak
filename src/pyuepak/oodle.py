@@ -134,15 +134,15 @@ class Oodle:
             1,
             1,
             0,
+            None,
             0,
-            0,
-            0,
-            0,
+            None,
+            None,
             None,
             0,
             3,
         )
-        if written == 0:
+        if written <= 0:
             raise CompressionFailed("Oodle decompression failed")
 
         return bytes(out_buffer[:written])
