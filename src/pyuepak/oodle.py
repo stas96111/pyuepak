@@ -88,12 +88,41 @@ class Oodle:
 
         self.compress_fn = self.lib.OodleLZ_Compress
         self.compress_fn.restype = ctypes.c_longlong
+        self.compress_fn.argtypes = [
+            ctypes.c_int,           # compressor
+            ctypes.c_void_p,        # input buffer
+            ctypes.c_size_t,        # input length
+            ctypes.c_void_p,        # output buffer
+            ctypes.c_int,           # level
+            ctypes.c_void_p,        # config
+            ctypes.c_void_p,        # callback
+            ctypes.c_void_p,        # callback data
+            ctypes.c_void_p,        # decoder
+            ctypes.c_uint,          # decoder bytes
+        ]
 
         self.decompress_fn = self.lib.OodleLZ_Decompress
         self.decompress_fn.restype = ctypes.c_longlong
+        self.decompress_fn.argtypes = [
+            ctypes.c_void_p,        # input buffer
+            ctypes.c_size_t,        # input length
+            ctypes.c_void_p,        # output buffer
+            ctypes.c_size_t,        # output length
+            ctypes.c_int,           # decoder
+            ctypes.c_int,           # check
+            ctypes.c_int,           # verbose
+            ctypes.c_void_p,        # config
+            ctypes.c_size_t,        # config bytes
+            ctypes.c_void_p,        # callback
+            ctypes.c_void_p,        # callback data
+            ctypes.c_void_p,        # decoder
+            ctypes.c_size_t,        # decoder bytes
+            ctypes.c_int,           # thread
+        ]
 
         self.get_size_fn = self.lib.OodleLZ_GetCompressedBufferSizeNeeded
         self.get_size_fn.restype = ctypes.c_size_t
+        self.get_size_fn.argtypes = [ctypes.c_int, ctypes.c_size_t]
 
         # Disable Oodle's stdout logging
         self.set_printf = self.lib.OodleCore_Plugins_SetPrintf
@@ -126,8 +155,12 @@ class Oodle:
 
     def decompress(self, data: bytes, output_size: int) -> bytes:
         out_buffer = (ctypes.c_ubyte * output_size)()
+        # Convert bytearray to bytes for ctypes compatibility
+        if isinstance(data, bytearray):
+            data = bytes(data)
+        data_ptr = ctypes.c_char_p(data)
         written = self.decompress_fn(
-            data,
+            data_ptr,
             len(data),
             out_buffer,
             output_size,
